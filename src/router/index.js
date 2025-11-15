@@ -44,6 +44,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+  path: '/chat/:characterId?',
+  name: 'Chat',
+  component: () => import('../views/Chat.vue'),
+  meta: { requiresAuth: true }
+},
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/'
   }

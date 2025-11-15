@@ -22,11 +22,23 @@
             </div>
         </div>
 
-        <div class="characters-grid">
+        <!-- 显示加载状态 -->
+        <div v-if="characterStore.isLoading" class="loading-state">
+            <p>加载中...</p>
+        </div>
+
+        <!-- 显示错误信息 -->
+        <div v-else-if="characterStore.error" class="error-state">
+            <p>{{ characterStore.error }}</p>
+            <button @click="loadCharacters">重试</button>
+        </div>
+
+        <!-- 显示角色列表 -->
+        <div v-else class="characters-grid">
             <div v-for="character in filteredCharacters" :key="character.id" class="character-card"
                 @click="startChat(character)">
                 <div class="character-avatar">
-                    {{ character.emoji }}
+                    {{ character.avatar_url || '👤' }}
                 </div>
                 <div class="character-info">
                     <h3>{{ character.name }}</h3>
@@ -37,90 +49,71 @@
                         </span>
                     </div>
                     <div class="character-stats">
-                        <span>👍 {{ character.rating }}</span>
-                        <span>💬 {{ character.usageCount }}</span>
+                        <span>👍 {{ character.rating || 0 }}</span>
+                        <span>💬 {{ character.usage_count || 0 }}</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div v-if="filteredCharacters.length === 0" class="empty-state">
+        <div v-if="!characterStore.isLoading && !characterStore.error && filteredCharacters.length === 0" class="empty-state">
             <p>暂无角色，请尝试调整搜索条件</p>
         </div>
     </div>
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'  // 添加 onMounted 导入
 import { useRouter } from 'vue-router'
+import { useCharacterStore } from '../stores/character'
 
 export default {
     name: 'CharacterList',
     setup() {
         const router = useRouter()
+        const characterStore = useCharacterStore()
         const searchQuery = ref('')
         const selectedTags = ref([])
 
-        // 模拟角色数据
-        const characters = ref([
-            {
-                id: 1,
-                name: '历史学者',
-                emoji: '📚',
-                description: '博学的历史教授，精通世界历史',
-                tags: ['历史', '教育', '学者'],
-                rating: 4.8,
-                usageCount: 1234
-            },
-            {
-                id: 2,
-                name: '科幻作家',
-                emoji: '🚀',
-                description: '富有想象力的科幻小说作家',
-                tags: ['科幻', '创意', '写作'],
-                rating: 4.6,
-                usageCount: 856
-            },
-            {
-                id: 3,
-                name: '心理导师',
-                emoji: '🧠',
-                description: '专业的心理咨询师，善于倾听和引导',
-                tags: ['心理', '情感', '咨询'],
-                rating: 4.9,
-                usageCount: 2107
-            },
-            {
-                id: 4,
-                name: '语言伙伴',
-                emoji: '🗣️',
-                description: '多语言交流伙伴，帮助提升语言能力',
-                tags: ['语言', '学习', '交流'],
-                rating: 4.5,
-                usageCount: 932
-            }
-        ])
+        // 加载角色数据
+        const loadCharacters = async () => {
+            await characterStore.fetchPublicCharacters()
+        }
+
+        onMounted(async () => {
+            await loadCharacters()
+        })
 
         const tags = computed(() => {
-            const allTags = characters.value.flatMap(char => char.tags)
-            return [...new Set(allTags)]
+            if (!characterStore.characters || characterStore.characters.length === 0) return []
+            const allTags = characterStore.characters.flatMap(char => char.tags || [])
+            return [...new Set(allTags)].filter(tag => tag) // 过滤掉空标签
         })
 
         const filteredCharacters = computed(() => {
-            // 确保 characters.value 存在
-            if (!characters.value) return []
+            if (!characterStore.characters || characterStore.characters.length === 0) return []
 
-            return characters.value.filter(character => {
-                const matchesSearch = character.name.includes(searchQuery.value) ||
-                    character.description.includes(searchQuery.value)
+            return characterStore.characters.filter(character => {
+                if (!character) return false
+
+                const name = character.name || ''
+                const description = character.description || ''
+                const tags = character.tags || []
+
+                const searchTerm = searchQuery.value.toLowerCase()
+                const matchesSearch = name.toLowerCase().includes(searchTerm) ||
+                    description.toLowerCase().includes(searchTerm) ||
+                    tags.some(tag => tag.toLowerCase().includes(searchTerm))
+                    
                 const matchesTags = selectedTags.value.length === 0 ||
-                    selectedTags.value.some(tag => character.tags.includes(tag))
+                    selectedTags.value.some(tag => tags.includes(tag))
+                    
                 return matchesSearch && matchesTags
             })
         })
 
         const handleSearch = () => {
-            // 搜索逻辑
+            // 搜索逻辑已集成在 computed 属性中
         }
 
         const toggleTag = (tag) => {
@@ -133,8 +126,7 @@ export default {
         }
 
         const startChat = (character) => {
-            alert(`开始与 ${character.name} 聊天`)
-            // 实际项目中这里会跳转到聊天页面
+            router.push(`/chat/${character.id}`)
         }
 
         const goBack = () => {
@@ -146,10 +138,12 @@ export default {
             selectedTags,
             filteredCharacters,
             tags,
+            characterStore,
             handleSearch,
             toggleTag,
             startChat,
-            goBack
+            goBack,
+            loadCharacters
         }
     }
 }
@@ -189,7 +183,7 @@ export default {
     display: flex;
     background: white;
     border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     border: 1px solid #e0e0e0;
     overflow: hidden;
     max-width: 500px;
@@ -236,6 +230,22 @@ export default {
     border-color: #007bff;
 }
 
+.loading-state, .error-state {
+    text-align: center;
+    padding: 3rem;
+    color: #6c757d;
+}
+
+.error-state button {
+    margin-top: 1rem;
+    padding: 0.5rem 1rem;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
 .characters-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -246,7 +256,7 @@ export default {
     background: white;
     border-radius: 12px;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     border: 1px solid #e0e0e0;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -254,7 +264,7 @@ export default {
 
 .character-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .character-avatar {

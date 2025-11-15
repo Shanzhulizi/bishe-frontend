@@ -5,6 +5,11 @@
       <button class="back-btn" @click="goBack">← 返回</button>
     </div>
 
+    <div v-if="characterStore.error" class="error-message">
+      {{ characterStore.error }}
+      <button @click="characterStore.clearError()" class="close-error">×</button>
+    </div>
+
     <div class="creation-form">
       <!-- 基础信息 -->
       <div class="form-section">
@@ -17,6 +22,7 @@
               type="text" 
               placeholder="给角色起个名字"
               required
+              :disabled="characterStore.isLoading"
             >
           </div>
           <div class="form-group">
@@ -25,12 +31,14 @@
               <div 
                 v-for="emoji in emojiList" 
                 :key="emoji"
-                :class="['avatar-option', { selected: character.avatar === emoji }]"
-                @click="character.avatar = emoji"
+                :class="['avatar-option', { selected: character.avatar_url === emoji }]"
+                @click="character.avatar_url = emoji"
+                :disabled="characterStore.isLoading"
               >
                 {{ emoji }}
               </div>
             </div>
+            <small>选择的emoji将保存为avatar_url</small>
           </div>
         </div>
       </div>
@@ -44,6 +52,7 @@
             v-model="character.description" 
             placeholder="简要描述这个角色的特点..."
             rows="3"
+            :disabled="characterStore.isLoading"
           ></textarea>
         </div>
         <div class="form-group">
@@ -53,6 +62,7 @@
             placeholder="详细描述角色的性格、说话方式、习惯等..."
             rows="4"
             required
+            :disabled="characterStore.isLoading"
           ></textarea>
         </div>
         <div class="form-group">
@@ -61,6 +71,7 @@
             v-model="character.background" 
             placeholder="角色的背景故事、经历等..."
             rows="4"
+            :disabled="characterStore.isLoading"
           ></textarea>
         </div>
       </div>
@@ -71,20 +82,33 @@
         <div class="form-group">
           <label>问候语 *</label>
           <input 
-            v-model="character.greeting" 
+            v-model="character.greeting_message" 
             type="text" 
             placeholder="角色初次见面的问候语"
             required
+            :disabled="characterStore.isLoading"
           >
         </div>
         <div class="form-group">
           <label>示例对话</label>
           <textarea 
-            v-model="character.exampleDialogue" 
+            v-model="character.example_dialogue" 
             placeholder="提供一些示例对话，帮助AI更好地理解角色..."
             rows="4"
+            :disabled="characterStore.isLoading"
           ></textarea>
           <small>格式：用户: 内容\n角色: 内容</small>
+        </div>
+        <div class="form-group">
+          <label>系统提示词 *</label>
+          <textarea 
+            v-model="character.initial_prompt" 
+            placeholder="给AI的核心系统提示词，定义角色的行为和回应方式..."
+            rows="4"
+            required
+            :disabled="characterStore.isLoading"
+          ></textarea>
+          <small>这是最重要的设定，将直接影响AI的行为</small>
         </div>
       </div>
 
@@ -99,6 +123,7 @@
               :key="tag"
               :class="['tag-option', { selected: character.tags.includes(tag) }]"
               @click="toggleTag(tag)"
+              :disabled="characterStore.isLoading"
             >
               {{ tag }}
             </span>
@@ -112,8 +137,9 @@
               type="text" 
               placeholder="输入新标签"
               @keyup.enter="addCustomTag"
+              :disabled="characterStore.isLoading"
             >
-            <button @click="addCustomTag">添加</button>
+            <button @click="addCustomTag" :disabled="characterStore.isLoading">添加</button>
           </div>
           <div class="selected-tags">
             <span 
@@ -122,7 +148,7 @@
               class="selected-tag"
             >
               {{ tag }}
-              <span @click="removeTag(tag)">×</span>
+              <span @click="removeTag(tag)" :disabled="characterStore.isLoading">×</span>
             </span>
           </div>
         </div>
@@ -134,8 +160,9 @@
         <div class="form-group">
           <label class="checkbox-label">
             <input 
-              v-model="character.isPublic" 
+              v-model="character.is_public" 
               type="checkbox" 
+              :disabled="characterStore.isLoading"
             >
             公开此角色（其他用户可以看到和使用）
           </label>
@@ -144,44 +171,76 @@
 
       <!-- 操作按钮 -->
       <div class="form-actions">
-        <button class="btn-secondary" @click="goBack">取消</button>
-        <button class="btn-primary" @click="saveDraft">保存草稿</button>
-        <button class="btn-success" @click="createCharacter">创建角色</button>
+        <button 
+          class="btn-secondary" 
+          @click="goBack" 
+          :disabled="characterStore.isLoading"
+        >
+          取消
+        </button>
+        <button 
+          class="btn-primary" 
+          @click="saveDraft" 
+          :disabled="characterStore.isLoading"
+        >
+          保存草稿
+        </button>
+        <button 
+          class="btn-success" 
+          @click="createCharacter" 
+          :disabled="characterStore.isLoading || !isFormValid"
+        >
+          {{ characterStore.isLoading ? '创建中...' : '创建角色' }}
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useCharacterStore } from '../stores/character'
 
 export default {
   name: 'CreateCharacter',
   setup() {
     const router = useRouter()
+    const characterStore = useCharacterStore()
     const newTag = ref('')
 
     const character = reactive({
       name: '',
-      avatar: '👤',
+      avatar_url: '👤',
       description: '',
       personality: '',
       background: '',
-      greeting: '',
-      exampleDialogue: '',
+      greeting_message: '',
+      example_dialogue: '',
+      initial_prompt: '',
       tags: [],
-      isPublic: true
+      is_public: true
     })
 
     const emojiList = ['👤', '👨‍🎓', '👩‍💼', '🧙‍♂️', '🤖', '🐱', '🐉', '🌙', '⭐', '🎭', '🎨', '🔬']
 
     const availableTags = [
       '历史', '科幻', '奇幻', '现实', '教育', '娱乐', 
-      '心理', '情感', '职业', '语言', '创意', '技术'
+      '心理', '情感', '职业', '语言', '创意', '技术',
+      '幽默', '严肃', '友好', '专业', '休闲'
     ]
 
+    // 表单验证
+    const isFormValid = computed(() => {
+      return character.name.trim() && 
+             character.personality.trim() && 
+             character.greeting_message.trim() && 
+             character.initial_prompt.trim()
+    })
+
     const toggleTag = (tag) => {
+      if (characterStore.isLoading) return
+      
       const index = character.tags.indexOf(tag)
       if (index > -1) {
         character.tags.splice(index, 1)
@@ -191,6 +250,8 @@ export default {
     }
 
     const addCustomTag = () => {
+      if (characterStore.isLoading) return
+      
       if (newTag.value.trim() && !character.tags.includes(newTag.value.trim())) {
         character.tags.push(newTag.value.trim())
         newTag.value = ''
@@ -198,37 +259,38 @@ export default {
     }
 
     const removeTag = (tag) => {
+      if (characterStore.isLoading) return
+      
       const index = character.tags.indexOf(tag)
       if (index > -1) {
         character.tags.splice(index, 1)
       }
     }
 
-    const createCharacter = () => {
-      // 验证必填字段
-      if (!character.name.trim()) {
-        alert('请填写角色名称')
-        return
-      }
-      if (!character.personality.trim()) {
-        alert('请填写性格特点')
-        return
-      }
-      if (!character.greeting.trim()) {
-        alert('请填写问候语')
-        return
-      }
+    const createCharacter = async () => {
+      if (!isFormValid.value) return
 
-      // 模拟创建角色
-      console.log('创建角色:', character)
-      alert('角色创建成功！')
-      router.push('/characters')
+
+  console.log('提交的角色数据:', character)
+      const result = await characterStore.createCharacter(character)
+        console.log('创建结果:', result)
+      if (result.success) {
+console.log('新角色ID:', result.data.id)
+    console.log('新角色名称:', result.data.name)
+        alert('角色创建成功！')
+        router.push(`/chat/${result.data.id}`)
+      } else {
+        // 错误信息已经在store中，这里可以显示toast等
+      }
     }
 
     const saveDraft = () => {
-      // 保存草稿逻辑
-      console.log('保存草稿:', character)
-      alert('草稿已保存')
+      const draftData = {
+        ...character,
+        saved_at: new Date().toISOString()
+      }
+      localStorage.setItem('character_draft', JSON.stringify(draftData))
+      alert('草稿已保存到本地')
     }
 
     const goBack = () => {
@@ -240,6 +302,8 @@ export default {
       emojiList,
       availableTags,
       newTag,
+      characterStore,
+      isFormValid,
       toggleTag,
       addCustomTag,
       removeTag,
@@ -250,7 +314,6 @@ export default {
   }
 }
 </script>
-
 <style scoped>
 .create-character {
   max-width: 800px;
@@ -489,5 +552,39 @@ export default {
 
 .btn-success:hover {
   background: #218838;
+}
+
+.error-message {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.close-error {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: #721c24;
+}
+
+/* 其他样式保持不变，添加禁用状态样式 */
+.avatar-option:disabled,
+.tag-option:disabled,
+.selected-tag span:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary:disabled,
+.btn-primary:disabled,
+.btn-success:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
